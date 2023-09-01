@@ -1,8 +1,18 @@
+# import the libraries
+#python version 3.7.10
+import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import pandas as pd
+import numpy_financial as npf
+from scipy.optimize import brentq as root
 
-def generate_loan_repayment_schedule(loanstartdate, loanenddate, originalamount, repaymentfrequency, interestrate, upfrontfee, repaymenttype, interest_calculation_method, base_days, interest_type):
+# define the functions
+def eirfunc(installment_amount,num_of_pmts,presVal):
+    return root(lambda x:  installment_amount * ((1 - ((1 + x) ** (-num_of_pmts))) / x) - presVal, 0.000001, 0.999999) * 100 * 12
+
+def generate_loan_repayment_schedule(loanstartdate, loanenddate, originalamount, repaymentfrequency,
+                                     interestrate, upfrontfee, repaymenttype, interest_calculation_method,
+                                     base_days, interest_type):
     # Convert date strings to datetime objects
     loanstartdate = datetime.strptime(loanstartdate, '%Y-%m-%d')
     loanenddate = datetime.strptime(loanenddate, '%Y-%m-%d')
@@ -13,7 +23,7 @@ def generate_loan_repayment_schedule(loanstartdate, loanenddate, originalamount,
     # Define repayment intervals in months
     intervals = {
         'monthly': 1,
-        'termly': 3,
+        'termly': 4,
         'quarterly': 3,
         'bi-annually': 6,
         'yearly': 12,
@@ -52,12 +62,19 @@ def generate_loan_repayment_schedule(loanstartdate, loanenddate, originalamount,
     # Generate the repayment schedule
     repayment_schedule = []
     running_balance = originalamount
-    current_date = loanstartdate
+    current_date = loanstartdate + relativedelta(months=repayment_interval)
     for _ in range(num_repayments):
         if interest_type == 'flatrate':
             interest_payment = interestrate / 100 * originalamount
         elif interest_type == 'variable':
-            interest_payment = interest_rate_factor * running_balance
+            if interest_calculation_method == 'monthly':
+                months_in_period = repayment_interval
+                interest_payment = interestrate / 100 / 12 * running_balance * months_in_period
+            elif interest_calculation_method == 'daily':
+                days_in_period = (current_date - (current_date - relativedelta(months=repayment_interval))).days
+                interest_payment = (interestrate / 100 / base_days) * days_in_period * running_balance
+            else:
+                raise ValueError("Invalid interest calculation method")
         else:
             raise ValueError("Invalid interest type")
         
@@ -80,20 +97,25 @@ def generate_loan_repayment_schedule(loanstartdate, loanenddate, originalamount,
     
     return pd.DataFrame(repayment_schedule)
 
+# def eirfunc(installment_amount,num_of_pmts,presVal):
+#     return root(lambda x:  installment_amount * ((1 - ((1 + x) ** (-num_of_pmts))) / x) - presVal, 0.000001, 0.999999)###*12
+
 # Example usage
-loanstartdate = '2023-09-01'
-loanenddate = '2024-09-01'
+loanstartdate = '2023-01-31'
+loanenddate = '2025-01-31'
 originalamount = 10000
-repaymentfrequency = 'monthly'  # Change to your desired frequency
+repaymentfrequency = 'monthly'  # Change to your desired frequency   
 interestrate = 5  # 5%
 upfrontfee = 200
-repaymenttype = 'emi'  # Change to 'emi' for Equal Monthly Installment
-interest_calculation_method = 'daily'  # Change to 'daily' for daily interest calculation
+repaymenttype = 'emi'  # Change to 'emi' or 'fpi' for Equal Monthly Installment
+interest_calculation_method = 'monthly'  # Change to 'daily' or 'monthly' for daily interest calculation
 base_days = 365  # Change to 360 if using 360 days per year
-interest_type = 'flatrate'  # Change to 'variable' for variable interest based on running balance
+interest_type = 'variable'  # Change to 'flatrate' or 'variable' for flat rate interest on the original amount
 
 repayment_schedule_df = generate_loan_repayment_schedule(
     loanstartdate, loanenddate, originalamount, repaymentfrequency, interestrate, upfrontfee, repaymenttype,
     interest_calculation_method, base_days, interest_type
 )
+print(repayment_schedule_df[['Principal','Interest']].sum())
 print(repayment_schedule_df)
+# repayment_schedule_df.to_csv('rep.csv')
